@@ -13,7 +13,7 @@ app.get("/webhook", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+  if (mode === "subscribe" && token === process.env.VERIFY_TOKEN) {
     console.log("Webhook verificado ✅");
     res.status(200).send(challenge);
   } else {
@@ -42,7 +42,8 @@ app.post("/webhook", async (req, res) => {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages: [{ role: "user", content: text }],
-      system: "Eres un asistente amable que responde mensajes de WhatsApp en español. Sé conciso y útil.",
+      system:
+        "Eres un asistente amable que responde mensajes de WhatsApp en español. Sé conciso y útil.",
     });
 
     const reply = response.content[0].text;
@@ -58,7 +59,7 @@ app.post("/webhook", async (req, res) => {
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.GRAPH_API_TOKEN}`,
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
           "Content-Type": "application/json",
         },
       }
