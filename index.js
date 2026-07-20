@@ -139,7 +139,11 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`Respuesta enviada a ${from}`);
   } catch (err) {
-    console.error("Error:", err.message);
+    if (err.response?.data) {
+      console.error("Error:", JSON.stringify(err.response.data));
+    } else {
+      console.error("Error:", err.message);
+    }
   }
 });
 
