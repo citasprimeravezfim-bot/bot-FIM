@@ -54,6 +54,14 @@ const usuariosConversando = new Set();
 const historiales = new Map();
 const MAX_HISTORIAL = 20; // últimos N mensajes por usuario, para no crecer sin control
 
+// 📊 Registro simple de mensajes para el panel de monitoreo (también en memoria)
+const registroConversaciones = new Map(); // from -> [{texto, hora, direccion}]
+
+function registrarMensaje(from, texto, direccion) {
+  if (!registroConversaciones.has(from)) registroConversaciones.set(from, []);
+  registroConversaciones.get(from).push({ texto, hora: new Date(), direccion });
+}
+
 // 📋 Guion de preguntas y respuestas de la clínica (implantes dentales)
 const SYSTEM_PROMPT = `Eres Adri, el asistente de WhatsApp de una clínica de implantes dentales. Respondes en español, de forma breve, cálida y profesional. Si te preguntan tu nombre, di que te llamas Adri.
 
@@ -149,6 +157,7 @@ app.post("/webhook", async (req, res) => {
     const text = message.text.body;
 
     console.log(`Mensaje de ${from}: ${text}`);
+    registrarMensaje(from, text, "entrante");
 
     // 👋 Si es la primera vez que este número escribe, mandar bienvenida primero
     if (!usuariosConversando.has(from)) {
@@ -171,6 +180,7 @@ app.post("/webhook", async (req, res) => {
       );
 
       console.log(`Bienvenida enviada a ${from}`);
+      registrarMensaje(from, WELCOME_MESSAGE, "saliente");
     }
 
     // 🧠 Recuperar/crear historial de este usuario
@@ -254,6 +264,7 @@ app.post("/webhook", async (req, res) => {
     );
 
     console.log(`Respuesta enviada a ${from}`);
+    registrarMensaje(from, reply, "saliente");
   } catch (err) {
     if (err.response?.data) {
       console.error("Error:", JSON.stringify(err.response.data));
@@ -261,6 +272,153 @@ app.post("/webhook", async (req, res) => {
       console.error("Error:", err.message);
     }
   }
+});
+
+// 🔒 Autenticación básica para el panel (usuario/contraseña por variable de entorno)
+function requiereAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Basic ")) {
+    res.set("WWW-Authenticate", 'Basic realm="Panel FIM"');
+    return res.status(401).send("Autenticación requerida");
+  }
+
+  const [usuario, password] = Buffer.from(authHeader.split(" ")[1], "base64")
+    .toString()
+    .split(":");
+
+  if (usuario === process.env.DASHBOARD_USER && password === process.env.DASHBOARD_PASSWORD) {
+    return next();
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="Panel FIM"');
+  return res.status(401).send("Credenciales incorrectas");
+}
+
+// 📊 API: lista de conversaciones (JSON)
+app.get("/dashboard/api/conversaciones", requiereAuth, (req, res) => {
+  const conversaciones = [...registroConversaciones.entries()].map(([numero, mensajes]) => {
+    const ultimo = mensajes[mensajes.length - 1];
+    return {
+      numero,
+      cantidad: mensajes.length,
+      ultimoTexto: ultimo.texto,
+      ultimaHora: ultimo.hora,
+    };
+  });
+
+  conversaciones.sort((a, b) => new Date(b.ultimaHora) - new Date(a.ultimaHora));
+  res.json(conversaciones);
+});
+
+// 📊 API: detalle de una conversación (JSON)
+app.get("/dashboard/api/conversacion/:numero", requiereAuth, (req, res) => {
+  const mensajes = registroConversaciones.get(req.params.numero) || [];
+  res.json(mensajes);
+});
+
+// 📊 Panel de monitoreo: interfaz de dos columnas (contactos + chat)
+app.get("/dashboard", requiereAuth, (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Panel de conversaciones - FIM</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+          header { background: #1a73a8; color: white; padding: 14px 20px; display: flex; align-items: center; gap: 10px; }
+          header .icono { font-size: 24px; }
+          header h1 { font-size: 18px; margin: 0; }
+          header p { font-size: 12px; margin: 2px 0 0; opacity: 0.9; }
+          .layout { flex: 1; display: flex; overflow: hidden; }
+          .sidebar { width: 320px; border-right: 1px solid #ddd; overflow-y: auto; background: white; }
+          .contacto { padding: 12px 16px; border-bottom: 1px solid #eee; cursor: pointer; }
+          .contacto:hover { background: #f5f5f5; }
+          .contacto.activo { background: #e8f2fa; }
+          .contacto .numero { color: #1a73a8; font-weight: 600; font-size: 14px; }
+          .contacto .preview { font-size: 13px; color: #555; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .contacto .hora { font-size: 11px; color: #999; margin-top: 3px; }
+          .chat { flex: 1; display: flex; flex-direction: column; background: #ECE5DD; }
+          .chat-header { background: white; padding: 14px 20px; border-bottom: 1px solid #ddd; font-weight: 600; color: #222; }
+          .chat-body { flex: 1; overflow-y: auto; padding: 20px; }
+          .burbuja-fila { display: flex; margin: 8px 0; }
+          .burbuja { max-width: 60%; padding: 10px 14px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+          .burbuja .texto { white-space: pre-wrap; }
+          .burbuja .hora { font-size: 11px; color: #888; margin-top: 4px; }
+          .vacio { padding: 40px; text-align: center; color: #888; }
+        </style>
+      </head>
+      <body>
+        <header>
+          <span class="icono">🦷</span>
+          <div>
+            <h1>Panel de conversaciones</h1>
+            <p id="contador">Cargando contactos…</p>
+          </div>
+        </header>
+        <div class="layout">
+          <div class="sidebar" id="sidebar"></div>
+          <div class="chat">
+            <div class="chat-header" id="chatHeader">Selecciona una conversación</div>
+            <div class="chat-body" id="chatBody"><div class="vacio">Elige un contacto de la lista para ver los mensajes</div></div>
+          </div>
+        </div>
+
+        <script>
+          let numeroActivo = null;
+
+          async function cargarContactos() {
+            const res = await fetch('/dashboard/api/conversaciones');
+            const conversaciones = await res.json();
+
+            document.getElementById('contador').textContent = conversaciones.length + ' contacto' + (conversaciones.length === 1 ? '' : 's');
+
+            const sidebar = document.getElementById('sidebar');
+            sidebar.innerHTML = conversaciones.map(c => \`
+              <div class="contacto \${c.numero === numeroActivo ? 'activo' : ''}" onclick="abrirConversacion('\${c.numero}')">
+                <div class="numero">+\${c.numero}</div>
+                <div class="preview">\${escapar(c.ultimoTexto).slice(0, 60)}</div>
+                <div class="hora">\${new Date(c.ultimaHora).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}</div>
+              </div>
+            \`).join('') || '<div class="vacio">Sin conversaciones todavía</div>';
+          }
+
+          async function abrirConversacion(numero) {
+            numeroActivo = numero;
+            cargarContactos();
+
+            const res = await fetch('/dashboard/api/conversacion/' + encodeURIComponent(numero));
+            const mensajes = await res.json();
+
+            document.getElementById('chatHeader').textContent = '+' + numero + ' — ' + mensajes.length + ' mensaje' + (mensajes.length === 1 ? '' : 's');
+
+            const body = document.getElementById('chatBody');
+            body.innerHTML = mensajes.map(m => \`
+              <div class="burbuja-fila" style="justify-content: \${m.direccion === 'saliente' ? 'flex-end' : 'flex-start'};">
+                <div class="burbuja" style="background: \${m.direccion === 'saliente' ? '#DCF8C6' : '#FFFFFF'};">
+                  <div class="texto">\${escapar(m.texto)}</div>
+                  <div class="hora">\${new Date(m.hora).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}</div>
+                </div>
+              </div>
+            \`).join('') || '<div class="vacio">Sin mensajes</div>';
+
+            body.scrollTop = body.scrollHeight;
+          }
+
+          function escapar(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto || '';
+            return div.innerHTML;
+          }
+
+          cargarContactos();
+          setInterval(cargarContactos, 10000); // refrescar lista cada 10s
+          setInterval(() => { if (numeroActivo) abrirConversacion(numeroActivo); }, 10000); // refrescar chat activo
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 3000;
