@@ -33,6 +33,13 @@ async function crearEventoCalendar({ fecha, hora, nombre_paciente, motivo, telef
     description: `Motivo: ${motivo || "No especificado"}\nTeléfono: ${telefono}`,
     start: { dateTime: inicio.toISOString(), timeZone: "America/Mexico_City" },
     end: { dateTime: fin.toISOString(), timeZone: "America/Mexico_City" },
+    // Guardamos estos datos de forma estructurada para poder leerlos fácil al mandar recordatorios
+    extendedProperties: {
+      private: {
+        telefono: telefono,
+        nombrePaciente: nombre_paciente || "Paciente",
+      },
+    },
   };
 
   const result = await calendar.events.insert({
@@ -41,6 +48,116 @@ async function crearEventoCalendar({ fecha, hora, nombre_paciente, motivo, telef
   });
 
   return result.data;
+}
+
+// 📤 Helper: enviar mensaje de texto libre por WhatsApp
+async function enviarWhatsAppTexto(to, texto) {
+  await axios.post(
+    `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    { messaging_product: "whatsapp", to, type: "text", text: { body: texto } },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+
+// 📤 Helper: enviar mensaje de plantilla aprobada por WhatsApp (funciona fuera de la ventana de 24h)
+async function enviarWhatsAppTemplate(to, nombreTemplate, parametros) {
+  await axios.post(
+    `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: {
+        name: nombreTemplate,
+        language: { code: "es_MX" },
+        components: [
+          {
+            type: "body",
+            parameters: parametros.map((texto) => ({ type: "text", text: texto })),
+          },
+        ],
+      },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+
+// ⏰ Recordatorios de citas: revisa el calendario y manda recordatorios a 24h y 2h antes
+const recordatorios24Enviados = new Set(); // IDs de eventos en memoria, se reinicia con el servidor
+const recordatorios2Enviados = new Set();
+
+async function revisarYEnviarRecordatorios() {
+  try {
+    const ahora = new Date();
+    const en26h = new Date(ahora.getTime() + 26 * 60 * 60 * 1000);
+
+    const { data } = await calendar.events.list({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      timeMin: ahora.toISOString(),
+      timeMax: en26h.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
+    });
+
+    for (const evento of data.items || []) {
+      if (!evento.start?.dateTime) continue; // ignorar eventos de todo el día
+
+      const inicio = new Date(evento.start.dateTime);
+      const horasHasta = (inicio - ahora) / (1000 * 60 * 60);
+
+      const telefono = evento.extendedProperties?.private?.telefono;
+      const nombre = evento.extendedProperties?.private?.nombrePaciente || "Paciente";
+      if (!telefono) continue; // eventos creados manualmente sin este dato, se ignoran
+
+      const fechaTexto = inicio.toLocaleDateString("es-MX", {
+        timeZone: "America/Mexico_City",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      });
+      const horaTexto = inicio.toLocaleTimeString("es-MX", {
+        timeZone: "America/Mexico_City",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // Recordatorio de 24 horas (ventana de 23 a 25h para no perdernos el envío si el chequeo cada 15 min cae distinto)
+      if (horasHasta <= 25 && horasHasta > 23 && !recordatorios24Enviados.has(evento.id)) {
+        await enviarWhatsAppTemplate("52" + telefono.replace(/^52/, ""), process.env.WHATSAPP_TEMPLATE_RECORDATORIO || "recordatorio_cita", [
+          nombre,
+          fechaTexto,
+          horaTexto,
+        ]);
+        recordatorios24Enviados.add(evento.id);
+        registrarMensaje(telefono, `[Recordatorio 24h enviado] Cita el ${fechaTexto} a las ${horaTexto}`, "saliente");
+        console.log(`Recordatorio 24h enviado a ${telefono} (evento ${evento.id})`);
+      }
+
+      // Recordatorio de 2 horas
+      if (horasHasta <= 2.25 && horasHasta > 0 && !recordatorios2Enviados.has(evento.id)) {
+        await enviarWhatsAppTemplate("52" + telefono.replace(/^52/, ""), process.env.WHATSAPP_TEMPLATE_RECORDATORIO || "recordatorio_cita", [
+          nombre,
+          fechaTexto,
+          horaTexto,
+        ]);
+        recordatorios2Enviados.add(evento.id);
+        registrarMensaje(telefono, `[Recordatorio 2h enviado] Cita el ${fechaTexto} a las ${horaTexto}`, "saliente");
+        console.log(`Recordatorio 2h enviado a ${telefono} (evento ${evento.id})`);
+      }
+    }
+  } catch (err) {
+    console.error("Error revisando recordatorios:", err.response?.data || err.message);
+  }
 }
 
 // 👋 Mensaje de bienvenida (se envía la primera vez que un número escribe)
@@ -163,21 +280,7 @@ app.post("/webhook", async (req, res) => {
     if (!usuariosConversando.has(from)) {
       usuariosConversando.add(from);
 
-      await axios.post(
-        `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to: from,
-          type: "text",
-          text: { body: WELCOME_MESSAGE },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      await enviarWhatsAppTexto(from, WELCOME_MESSAGE);
 
       console.log(`Bienvenida enviada a ${from}`);
       registrarMensaje(from, WELCOME_MESSAGE, "saliente");
@@ -247,21 +350,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // 📤 Enviar respuesta por WhatsApp
-    await axios.post(
-      `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: from,
-        type: "text",
-        text: { body: reply },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    await enviarWhatsAppTexto(from, reply);
 
     console.log(`Respuesta enviada a ${from}`);
     registrarMensaje(from, reply, "saliente");
@@ -422,4 +511,10 @@ app.get("/dashboard", requiereAuth, (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
+
+  // ⏰ Revisar recordatorios de citas cada 15 minutos (y una vez al arrancar)
+  revisarYEnviarRecordatorios();
+  setInterval(revisarYEnviarRecordatorios, 15 * 60 * 1000);
+});
