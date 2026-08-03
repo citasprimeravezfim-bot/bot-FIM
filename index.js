@@ -297,7 +297,10 @@ app.post('/webhook', async (req, res) => {
 
     if (!conversationHistory[from]) conversationHistory[from] = [];
     conversationHistory[from].push({ role: 'user', content: userText });
-    conversationHistory[from] = conversationHistory[from].slice(-6);
+    // Ventana más amplia: el flujo de agendar cita (nombre, tratamiento, día/hora,
+    // resumen, confirmación) puede tomar varios mensajes; con una ventana corta
+    // se perdía el dato de fecha/hora antes de llegar a la confirmación.
+    conversationHistory[from] = conversationHistory[from].slice(-20);
 
     const claudeReply = await askClaude(conversationHistory[from], from);
 
