@@ -253,6 +253,12 @@ app.get('/webhook', (req, res) => {
   }
 });
 
+// Guarda los IDs de mensajes de WhatsApp ya procesados, para ignorar reintentos
+// que a veces manda Meta si no detecta la respuesta a tiempo (esto evita, por
+// ejemplo, que una cita se intente agendar dos veces por el mismo mensaje).
+const mensajesProcesados = new Set();
+const LIMITE_MENSAJES_PROCESADOS = 500;
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 
@@ -262,6 +268,19 @@ app.post('/webhook', async (req, res) => {
     const message = change?.value?.messages?.[0];
 
     if (!message) return;
+
+    // Ignorar si ya procesamos este mensaje antes (reintento de Meta)
+    if (message.id) {
+      if (mensajesProcesados.has(message.id)) {
+        console.log(`Mensaje duplicado ignorado: ${message.id}`);
+        return;
+      }
+      mensajesProcesados.add(message.id);
+      if (mensajesProcesados.size > LIMITE_MENSAJES_PROCESADOS) {
+        const primero = mensajesProcesados.values().next().value;
+        mensajesProcesados.delete(primero);
+      }
+    }
 
     const from = message.from;
 
