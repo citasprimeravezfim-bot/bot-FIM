@@ -26,14 +26,25 @@ function getCalendarClient() {
   return google.calendar({ version: 'v3', auth: getAuthClient() });
 }
 
+// Claude manda fechas "ingenuas" (sin zona horaria) como "2026-08-05T11:00:00",
+// que representan hora de Ciudad de México. Si las convertimos con `new Date(...)`,
+// Node.js las interpreta con la zona horaria del SERVIDOR (Railway corre en UTC),
+// no con la de México, y la cita se guarda desfasada. Ciudad de México usa horario
+// fijo UTC-6 todo el año (ya no tiene horario de verano desde 2022), así que basta
+// con agregarle el offset "-06:00" directamente, sin pasar por new Date().
+function conOffsetMexico(fechaHoraStr) {
+  const yaTieneZona = /[Zz]$/.test(fechaHoraStr) || /[+-]\d{2}:\d{2}$/.test(fechaHoraStr);
+  return yaTieneZona ? fechaHoraStr : `${fechaHoraStr}-06:00`;
+}
+
 // ============ VERIFICAR DISPONIBILIDAD ============
 async function verificarDisponibilidad(fechaHoraInicio, fechaHoraFin) {
   const calendar = getCalendarClient();
 
   const respuesta = await calendar.freebusy.query({
     requestBody: {
-      timeMin: new Date(fechaHoraInicio).toISOString(),
-      timeMax: new Date(fechaHoraFin).toISOString(),
+      timeMin: conOffsetMexico(fechaHoraInicio),
+      timeMax: conOffsetMexico(fechaHoraFin),
       timeZone: TIMEZONE,
       items: [{ id: CALENDAR_ID }],
     },
@@ -58,8 +69,8 @@ async function crearCita({ paciente, telefono, motivo, fechaHoraInicio, fechaHor
     requestBody: {
       summary: `${motivo} - ${paciente}`,
       description: `Paciente: ${paciente}\nTeléfono: ${telefono}\nMotivo: ${motivo}`,
-      start: { dateTime: new Date(fechaHoraInicio).toISOString(), timeZone: TIMEZONE },
-      end: { dateTime: new Date(fechaHoraFin).toISOString(), timeZone: TIMEZONE },
+      start: { dateTime: conOffsetMexico(fechaHoraInicio), timeZone: TIMEZONE },
+      end: { dateTime: conOffsetMexico(fechaHoraFin), timeZone: TIMEZONE },
     },
   });
 
@@ -70,7 +81,7 @@ async function crearCita({ paciente, telefono, motivo, fechaHoraInicio, fechaHor
 async function buscarEventoCalendar(nombre, fechaHora) {
   const calendar = getCalendarClient();
 
-  const fecha = new Date(fechaHora);
+  const fecha = new Date(conOffsetMexico(fechaHora));
   const inicioRango = new Date(fecha);
   inicioRango.setDate(inicioRango.getDate() - 3);
   const finRango = new Date(fecha);
@@ -102,8 +113,8 @@ async function reagendarEventoCalendar(eventoId, nuevaFechaHoraInicio, nuevaFech
     calendarId: CALENDAR_ID,
     eventId: eventoId,
     requestBody: {
-      start: { dateTime: new Date(nuevaFechaHoraInicio).toISOString(), timeZone: TIMEZONE },
-      end: { dateTime: new Date(nuevaFechaHoraFin).toISOString(), timeZone: TIMEZONE },
+      start: { dateTime: conOffsetMexico(nuevaFechaHoraInicio), timeZone: TIMEZONE },
+      end: { dateTime: conOffsetMexico(nuevaFechaHoraFin), timeZone: TIMEZONE },
     },
   });
 }
