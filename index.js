@@ -260,16 +260,38 @@ app.get('/webhook', (req, res) => {
 const mensajesProcesados = new Set();
 const LIMITE_MENSAJES_PROCESADOS = 500;
 
+// Cola de procesamiento por número de teléfono: garantiza que los mensajes de
+// un mismo paciente se procesen uno a la vez, nunca en paralelo. Esto evita
+// condiciones de carrera (por ejemplo, dos mensajes casi simultáneos del mismo
+// número —por un reenvío del celular— que terminaban creando o intentando
+// crear la misma cita dos veces antes de que la primera terminara de guardarse).
+const colasPorTelefono = new Map();
+
+function encolarPorTelefono(telefono, tarea) {
+  const anterior = colasPorTelefono.get(telefono) || Promise.resolve();
+  const actual = anterior.then(tarea, tarea);
+  colasPorTelefono.set(telefono, actual.catch(() => {}));
+  return actual;
+}
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 
+  const entry = req.body.entry?.[0];
+  const change = entry?.changes?.[0];
+  const message = change?.value?.messages?.[0];
+
+  if (!message) return;
+
+  const from = message.from;
+
+  // Todo el procesamiento de este mensaje pasa a la cola de este número,
+  // así nunca se procesan dos mensajes del mismo paciente al mismo tiempo.
+  encolarPorTelefono(from, () => procesarMensajeEntrante(message, from));
+});
+
+async function procesarMensajeEntrante(message, from) {
   try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
-
-    if (!message) return;
-
     // Ignorar si ya procesamos este mensaje antes (reintento de Meta)
     if (message.id) {
       if (mensajesProcesados.has(message.id)) {
@@ -282,8 +304,6 @@ app.post('/webhook', async (req, res) => {
         mensajesProcesados.delete(primero);
       }
     }
-
-    const from = message.from;
 
     if (message.type === 'audio') {
       const avisoVoz = 'No puedo escuchar mensajes de voz. Por favor, escribe tu petición y con gusto la atenderé 😊';
@@ -335,7 +355,7 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error('Error procesando mensaje:', err);
   }
-});
+}
 
 // ============ LLAMAR A CLAUDE (con soporte de tools) ============
 async function askClaude(messages, telefonoUsuario) {
