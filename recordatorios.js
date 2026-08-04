@@ -41,7 +41,7 @@ async function procesarRecordatorios() {
         timeZone: 'America/Mexico_City',
       });
 
-      const mensaje = `¡Hola ${cita.nombre}! 👋 Te recordamos tu cita de ${cita.motivo} mañana a las ${hora} hrs en Fábrica de Sonrisas. Te esperamos 🦷😊`;
+      const mensaje = `¡Hola ${cita.nombre}! 👋 Te recordamos tu cita de ${cita.motivo} mañana a las ${hora} hrs en Fundación Implantológica de México. Te esperamos 🦷😊`;
 
       await enviarMensajeRecordatorio(cita.telefono, mensaje);
       await marcarRecordatorioEnviado(cita.id);
