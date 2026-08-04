@@ -153,6 +153,8 @@ Si el paciente pide una valoración de implantes (y es su primera vez, no un seg
 - Nunca agendes fuera del horario de valoraciones (Lunes a viernes 10:00-19:00, Sábados 10:00-14:00).
 - Nunca agendes algo que no sea una valoración de primera vez de implantes.
 - Nunca llames a "agendar_cita" sin que el paciente haya confirmado explícitamente el resumen primero.
+- NUNCA le preguntes al paciente su número de teléfono. El sistema ya lo identifica automáticamente por el número desde el que te escribe por WhatsApp; las herramientas de citas no necesitan ni reciben ese dato de ti.
+- Una vez que le confirmes al paciente que su cita quedó agendada exitosamente, esa conversación de agendado terminó. NO vuelvas a intentar agendar, verificar disponibilidad, ni pedir datos de nuevo por mensajes posteriores del mismo paciente (como "gracias", "ok", saludos, u otras preguntas), aunque el tema de citas haya sido lo último que se habló. Solo retoma el flujo de agendar si el paciente lo pide explícitamente de nuevo (por ejemplo, para agendar otra cita, cancelar o reagendar).
 
 CANCELAR O REAGENDAR CITAS:
 Si el paciente quiere cancelar su cita:
@@ -200,41 +202,37 @@ const TOOLS = [
   },
   {
     name: 'agendar_cita',
-    description: 'Crea una cita de VALORACIÓN DE PRIMERA VEZ en el calendario, solo para implantes dentales, una vez confirmada la disponibilidad y todos los datos del paciente.',
+    description: 'Crea una cita de VALORACIÓN DE PRIMERA VEZ en el calendario, solo para implantes dentales, una vez confirmada la disponibilidad y todos los datos del paciente. El teléfono del paciente se toma automáticamente del número de WhatsApp desde el que escribe; nunca se lo pidas ni lo incluyas.',
     input_schema: {
       type: 'object',
       properties: {
         paciente: { type: 'string', description: 'Nombre completo del paciente' },
-        telefono: { type: 'string', description: 'Número de teléfono del paciente' },
         motivo: { type: 'string', description: 'Debe ser exactamente "Valoración de implantes"' },
         fechaHoraInicio: { type: 'string', description: 'Fecha y hora de inicio en formato ISO' },
         fechaHoraFin: { type: 'string', description: 'Fecha y hora de fin en formato ISO' },
       },
-      required: ['paciente', 'telefono', 'motivo', 'fechaHoraInicio', 'fechaHoraFin'],
+      required: ['paciente', 'motivo', 'fechaHoraInicio', 'fechaHoraFin'],
     },
   },
   {
     name: 'cancelar_cita',
-    description: 'Cancela la cita activa del paciente en Google Calendar y en la base de datos. Úsala solo cuando el paciente confirme explícitamente que quiere cancelar.',
+    description: 'Cancela la cita activa del paciente en Google Calendar y en la base de datos. Úsala solo cuando el paciente confirme explícitamente que quiere cancelar. El paciente se identifica automáticamente por su número de WhatsApp.',
     input_schema: {
       type: 'object',
-      properties: {
-        telefono: { type: 'string', description: 'Número de teléfono del paciente' },
-      },
-      required: ['telefono'],
+      properties: {},
+      required: [],
     },
   },
   {
     name: 'reagendar_cita',
-    description: 'Reagenda la cita activa del paciente a una nueva fecha y hora. Verifica disponibilidad primero con verificar_disponibilidad antes de llamar esta herramienta.',
+    description: 'Reagenda la cita activa del paciente a una nueva fecha y hora. Verifica disponibilidad primero con verificar_disponibilidad antes de llamar esta herramienta. El paciente se identifica automáticamente por su número de WhatsApp.',
     input_schema: {
       type: 'object',
       properties: {
-        telefono: { type: 'string', description: 'Número de teléfono del paciente' },
         nuevaFechaHoraInicio: { type: 'string', description: 'Nueva fecha y hora de inicio en formato ISO' },
         nuevaFechaHoraFin: { type: 'string', description: 'Nueva fecha y hora de fin en formato ISO' },
       },
-      required: ['telefono', 'nuevaFechaHoraInicio', 'nuevaFechaHoraFin'],
+      required: ['nuevaFechaHoraInicio', 'nuevaFechaHoraFin'],
     },
   },
 ];
@@ -435,7 +433,10 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
       // Protección extra: si este número ya tiene una cita activa (por ejemplo
       // porque el mensaje de confirmación se procesó dos veces por un reenvío
       // del teléfono del paciente), no crear una segunda cita.
-      const citaExistente = await obtenerCitaPorTelefono(input.telefono || telefonoUsuario);
+      // Siempre se identifica al paciente por su número real de WhatsApp
+      // (telefonoUsuario), nunca por algo que Claude haya podido inventar o
+      // transcribir mal si llegó a preguntarlo.
+      const citaExistente = await obtenerCitaPorTelefono(telefonoUsuario);
       if (citaExistente) {
         return {
           exito: true,
@@ -446,7 +447,7 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
 
       const evento = await crearCita({
         paciente: input.paciente,
-        telefono: input.telefono || telefonoUsuario,
+        telefono: telefonoUsuario,
         motivo: input.motivo,
         fechaHoraInicio: input.fechaHoraInicio,
         fechaHoraFin: input.fechaHoraFin,
@@ -467,7 +468,7 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
     }
 
     if (name === 'cancelar_cita') {
-      const cita = await obtenerCitaPorTelefono(input.telefono || telefonoUsuario);
+      const cita = await obtenerCitaPorTelefono(telefonoUsuario);
       if (!cita) return { exito: false, mensaje: 'No se encontró ninguna cita activa para este número.' };
       const evento = await buscarEventoCalendar(cita.nombre, cita.fecha_hora);
       if (evento) await cancelarEventoCalendar(evento.id);
@@ -476,7 +477,7 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
     }
 
     if (name === 'reagendar_cita') {
-      const cita = await obtenerCitaPorTelefono(input.telefono || telefonoUsuario);
+      const cita = await obtenerCitaPorTelefono(telefonoUsuario);
       if (!cita) return { exito: false, mensaje: 'No se encontró ninguna cita activa para este número.' };
       const evento = await buscarEventoCalendar(cita.nombre, cita.fecha_hora);
       if (evento) {
