@@ -11,7 +11,7 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
-const SYSTEM_PROMPT_BASE = `Eres Adri, la asistente virtual de Fábrica de Sonrisas, una clínica dental.
+const SYSTEM_PROMPT_BASE = `Eres Adriana, la asistente virtual de Fundación Implantológica de México, una clínica dental.
 
 TONO: Amable, cordial, cálido y mexicano. Cercano pero profesional. Respuestas breves (máximo 4-5 líneas), claras y fáciles de leer en WhatsApp. Puedes usar emojis con moderación (🦷😊) pero sin exagerar.
 
@@ -279,12 +279,15 @@ app.post('/webhook', async (req, res) => {
     console.log(`Mensaje de ${from}: ${userText}`);
     await guardarMensaje(from, 'user', userText);
 
-    // Si es la primera vez que este número escribe, mandamos el mensaje de bienvenida
+    // Si es la primera vez que este número escribe, solo mandamos el saludo fijo
+    // y esperamos su siguiente mensaje (evita que Claude genere un segundo saludo).
     const esPrimeraVez = !conversationHistory[from];
     if (esPrimeraVez) {
-      const bienvenida = 'Hola, mi nombre es Adri, ¿en qué te puedo ayudar?';
+      const bienvenida = 'Hola, soy Adriana de Fundación Implantológica de México, ¿en qué te puedo ayudar?';
       await sendWhatsAppMessage(from, bienvenida);
       await guardarMensaje(from, 'assistant', bienvenida);
+      conversationHistory[from] = [];
+      return;
     }
 
     const lower = userText.toLowerCase().trim();
