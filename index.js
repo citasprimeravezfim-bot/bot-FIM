@@ -393,6 +393,14 @@ async function askClaude(messages, telefonoUsuario) {
   return 'Disculpa, tuve un problema procesando tu solicitud. ¿Puedes intentar de nuevo?';
 }
 
+// Guarda las citas en la base de datos usando explícitamente el offset de
+// Ciudad de México (UTC-6 fijo, sin horario de verano), para que coincida
+// con lo que se guarda en Google Calendar y no se desfasen los recordatorios.
+function conOffsetMexico(fechaHoraStr) {
+  const yaTieneZona = /[Zz]$/.test(fechaHoraStr) || /[+-]\d{2}:\d{2}$/.test(fechaHoraStr);
+  return yaTieneZona ? fechaHoraStr : `${fechaHoraStr}-06:00`;
+}
+
 async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
   const { name, input } = toolUseBlock;
 
@@ -419,7 +427,7 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
         telefonoUsuario,
         input.paciente,
         input.motivo,
-        input.fechaHoraInicio
+        conOffsetMexico(input.fechaHoraInicio)
       );
 
       return { exito: true, eventoId: evento.id };
@@ -441,7 +449,7 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
       if (evento) {
         await reagendarEventoCalendar(evento.id, input.nuevaFechaHoraInicio, input.nuevaFechaHoraFin);
       }
-      await reagendarCitaDB(cita.id, input.nuevaFechaHoraInicio);
+      await reagendarCitaDB(cita.id, conOffsetMexico(input.nuevaFechaHoraInicio));
       return { exito: true, mensaje: `Cita reagendada exitosamente para ${input.nuevaFechaHoraInicio}.` };
     }
 
