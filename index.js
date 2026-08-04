@@ -318,10 +318,15 @@ async function procesarMensajeEntrante(message, from) {
     console.log(`Mensaje de ${from}: ${userText}`);
     await guardarMensaje(from, 'user', userText);
 
-    // Si es la primera vez que este número escribe, solo mandamos el saludo fijo
-    // y esperamos su siguiente mensaje (evita que Claude genere un segundo saludo).
+    // Si es la primera vez que este número escribe Y su mensaje es solo un
+    // saludo simple (sin ninguna petición), mandamos el saludo fijo y
+    // esperamos su siguiente mensaje (evita que Claude genere un segundo
+    // saludo). Si en cambio ya viene con una petición concreta (ej. "quiero
+    // agendar una cita"), la dejamos pasar directo a Claude para que la
+    // atienda de una vez, sin hacerlo esperar un segundo mensaje.
     const esPrimeraVez = !conversationHistory[from];
-    if (esPrimeraVez) {
+    const esSoloUnSaludo = /^[¡!¿?\s]*(hola+|hi|hey+|buenas|buenos\s*d[íi]as|buenas\s*tardes|buenas\s*noches|qu[ée]\s*tal|holi+)[¡!.\s]*$/i.test(userText.trim());
+    if (esPrimeraVez && esSoloUnSaludo) {
       const bienvenida = 'Hola, soy Adriana de Fundación Implantológica de México, ¿en qué te puedo ayudar?';
       await sendWhatsAppMessage(from, bienvenida);
       await guardarMensaje(from, 'assistant', bienvenida);
