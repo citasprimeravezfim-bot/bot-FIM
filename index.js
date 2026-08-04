@@ -481,9 +481,18 @@ app.get('/', (req, res) => {
 });
 
 app.get('/conversaciones', async (req, res) => {
-  const clave = req.query.clave;
-  if (clave !== process.env.PANEL_CLAVE) {
-    return res.status(401).send('<h2 style="font-family:sans-serif;padding:2rem">Acceso no autorizado. Agrega ?clave=TU_CLAVE a la URL.</h2>');
+  const authHeader = req.headers.authorization || '';
+  const [tipo, credenciales] = authHeader.split(' ');
+
+  let usuarioOk = false;
+  if (tipo === 'Basic' && credenciales) {
+    const [usuario, password] = Buffer.from(credenciales, 'base64').toString('utf8').split(':');
+    usuarioOk = usuario === process.env.DASHBOARD_USER && password === process.env.DASHBOARD_PASSWORD;
+  }
+
+  if (!usuarioOk) {
+    res.set('WWW-Authenticate', 'Basic realm="Panel de conversaciones"');
+    return res.status(401).send('Acceso no autorizado.');
   }
 
   try {
