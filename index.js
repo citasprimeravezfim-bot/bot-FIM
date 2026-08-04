@@ -147,7 +147,8 @@ Si el paciente pide una valoración de implantes (y es su primera vez, no un seg
 6. Si "agendar_cita" tiene éxito, manda un mensaje de confirmación final, claro y completo, con todos los datos: fecha, hora y nombre del paciente. Ejemplo: "¡Listo, [nombre]! Tu cita de valoración de implantes quedó agendada para el [día] [fecha] a las [hora]. Te esperamos en Avenida División del Norte 1354 Piso 2, Consultorio 202, Colonia Letrán Valle, Benito Juárez 🦷😊"
 7. Si el paciente dice que no confirma, o pide cambiar algo, vuelve a preguntar el dato correcto y repite el resumen antes de agendar.
 8. Si al intentar agendar el horario resulta ocupado (puede pasar si alguien más lo tomó mientras conversaban), avísale amablemente y pide que elija otro horario. No intentes agendar igual.
-9. Si ocurre un ERROR TÉCNICO al usar "agendar_cita", "verificar_disponibilidad", "cancelar_cita" o "reagendar_cita" (distinto a que el horario esté ocupado), discúlpate brevemente y recomienda comunicarse directamente al 5638078177 para que le ayuden a agendar. Ejemplo: "Ups, parece que hubo un problema al agendar tu cita en el sistema. Te pido una disculpa. Te recomiendo comunicarte directamente con nuestro equipo al 5638078177 para que puedan agendarte sin problema. ¡Estamos para ayudarte! 🦷"
+9. Si el resultado de "agendar_cita" indica que el paciente ya tenía una cita activa (yaExistia: true), NO lo trates como error ni te disculpes — simplemente confirma con naturalidad que su cita ya está agendada, con los datos que te dé la herramienta.
+10. Si ocurre un ERROR TÉCNICO al usar "agendar_cita", "verificar_disponibilidad", "cancelar_cita" o "reagendar_cita" (distinto a que el horario esté ocupado o a que la cita ya existiera), discúlpate brevemente y recomienda comunicarse directamente al 5638078177 para que le ayuden a agendar. Ejemplo: "Ups, parece que hubo un problema al agendar tu cita en el sistema. Te pido una disculpa. Te recomiendo comunicarte directamente con nuestro equipo al 5638078177 para que puedan agendarte sin problema. ¡Estamos para ayudarte! 🦷"
 - Siempre usa el año 2026 si el paciente no especifica año.
 - Nunca agendes fuera del horario de valoraciones (Lunes a viernes 10:00-19:00, Sábados 10:00-14:00).
 - Nunca agendes algo que no sea una valoración de primera vez de implantes.
@@ -411,6 +412,18 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
     }
 
     if (name === 'agendar_cita') {
+      // Protección extra: si este número ya tiene una cita activa (por ejemplo
+      // porque el mensaje de confirmación se procesó dos veces por un reenvío
+      // del teléfono del paciente), no crear una segunda cita.
+      const citaExistente = await obtenerCitaPorTelefono(input.telefono || telefonoUsuario);
+      if (citaExistente) {
+        return {
+          exito: true,
+          yaExistia: true,
+          mensaje: `Ya existe una cita activa para este paciente (${citaExistente.motivo} el ${citaExistente.fecha_hora}). No se creó una cita nueva; informa al paciente que su cita ya estaba confirmada.`,
+        };
+      }
+
       const evento = await crearCita({
         paciente: input.paciente,
         telefono: input.telefono || telefonoUsuario,
