@@ -155,7 +155,8 @@ Si el paciente pide una valoración de implantes (y es su primera vez, no un seg
 - Nunca llames a "agendar_cita" sin que el paciente haya confirmado explícitamente el resumen primero.
 - NUNCA le preguntes al paciente su número de teléfono. El sistema ya lo identifica automáticamente por el número desde el que te escribe por WhatsApp; las herramientas de citas no necesitan ni reciben ese dato de ti.
 - Una vez que le confirmes al paciente que su cita quedó agendada exitosamente, esa conversación de agendado terminó. NO vuelvas a intentar agendar, NO vuelvas a llamar "verificar_disponibilidad", ni pidas datos de nuevo por mensajes posteriores del mismo paciente (como "gracias", "ok", saludos, u otras preguntas), aunque el tema de citas haya sido lo último que se habló. Solo retoma el flujo de agendar si el paciente lo pide explícitamente de nuevo (por ejemplo, para agendar otra cita, cancelar o reagendar).
-- Si por cualquier motivo el resultado de una herramienta incluye "citaActivaExistente: true" o "avisoImportante", tómalo como un hecho: ese paciente YA tiene una cita agendada. Nunca digas que hay un error, que el horario está ocupado, o que "te adelantaste sin verificar" — simplemente confírmale con naturalidad que su cita ya está agendada.
+- No asumas si el paciente tiene o no una cita activa basándote solo en lo que se dijo antes en esta conversación — el personal de la clínica puede cancelar, reagendar o modificar citas directamente, fuera de este chat, y esa información podría estar desactualizada. Si el paciente pregunta por el estado de su cita, o si necesitas confirmar si tiene una antes de agendar, cancelar o reagendar, usa siempre la herramienta "consultar_cita_activa" para verificarlo en tiempo real.
+- Si el resultado de cualquier herramienta incluye "citaActivaExistente: true" o "avisoImportante", o si "consultar_cita_activa" devuelve "tieneCita: true", tómalo como un hecho actual: ese paciente YA tiene una cita agendada. Nunca digas que hay un error, que el horario está ocupado, o que "te adelantaste sin verificar" — simplemente confírmale con naturalidad que su cita ya está agendada, usando los datos reales que te dé la herramienta (no los que recuerdes de mensajes anteriores).
 
 CANCELAR O REAGENDAR CITAS:
 Si el paciente quiere cancelar su cita:
@@ -189,6 +190,15 @@ function getSystemPrompt() {
 }
 
 const TOOLS = [
+  {
+    name: 'consultar_cita_activa',
+    description: 'Consulta en la base de datos, en tiempo real, si el paciente (identificado por su número de WhatsApp) tiene actualmente una cita activa, y sus datos. Úsala siempre que el paciente pregunte por el estado de su cita, o antes de asumir que tiene o no tiene una cita — nunca confíes solo en lo que se dijo antes en la conversación, ya que el personal de la clínica puede cancelar o modificar citas fuera de este chat.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
   {
     name: 'verificar_disponibilidad',
     description: 'Verifica si un horario específico está disponible en el calendario de citas antes de agendar.',
@@ -431,6 +441,19 @@ async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
   console.log(`Herramienta llamada: ${name} | teléfono: ${telefonoUsuario}`);
 
   try {
+    if (name === 'consultar_cita_activa') {
+      const cita = await obtenerCitaPorTelefono(telefonoUsuario);
+      if (!cita) {
+        return { tieneCita: false };
+      }
+      return {
+        tieneCita: true,
+        nombre: cita.nombre,
+        motivo: cita.motivo,
+        fecha_hora: cita.fecha_hora,
+      };
+    }
+
     if (name === 'verificar_disponibilidad') {
       const disponible = await verificarDisponibilidad(input.fechaHoraInicio, input.fechaHoraFin);
       const citaExistente = await obtenerCitaPorTelefono(telefonoUsuario);
