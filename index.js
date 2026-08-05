@@ -154,7 +154,8 @@ Si el paciente pide una valoración de implantes (y es su primera vez, no un seg
 - Nunca agendes algo que no sea una valoración de primera vez de implantes.
 - Nunca llames a "agendar_cita" sin que el paciente haya confirmado explícitamente el resumen primero.
 - NUNCA le preguntes al paciente su número de teléfono. El sistema ya lo identifica automáticamente por el número desde el que te escribe por WhatsApp; las herramientas de citas no necesitan ni reciben ese dato de ti.
-- Una vez que le confirmes al paciente que su cita quedó agendada exitosamente, esa conversación de agendado terminó. NO vuelvas a intentar agendar, verificar disponibilidad, ni pedir datos de nuevo por mensajes posteriores del mismo paciente (como "gracias", "ok", saludos, u otras preguntas), aunque el tema de citas haya sido lo último que se habló. Solo retoma el flujo de agendar si el paciente lo pide explícitamente de nuevo (por ejemplo, para agendar otra cita, cancelar o reagendar).
+- Una vez que le confirmes al paciente que su cita quedó agendada exitosamente, esa conversación de agendado terminó. NO vuelvas a intentar agendar, NO vuelvas a llamar "verificar_disponibilidad", ni pidas datos de nuevo por mensajes posteriores del mismo paciente (como "gracias", "ok", saludos, u otras preguntas), aunque el tema de citas haya sido lo último que se habló. Solo retoma el flujo de agendar si el paciente lo pide explícitamente de nuevo (por ejemplo, para agendar otra cita, cancelar o reagendar).
+- Si por cualquier motivo el resultado de una herramienta incluye "citaActivaExistente: true" o "avisoImportante", tómalo como un hecho: ese paciente YA tiene una cita agendada. Nunca digas que hay un error, que el horario está ocupado, o que "te adelantaste sin verificar" — simplemente confírmale con naturalidad que su cita ya está agendada.
 
 CANCELAR O REAGENDAR CITAS:
 Si el paciente quiere cancelar su cita:
@@ -427,10 +428,20 @@ function conOffsetMexico(fechaHoraStr) {
 
 async function ejecutarHerramienta(toolUseBlock, telefonoUsuario) {
   const { name, input } = toolUseBlock;
+  console.log(`Herramienta llamada: ${name} | teléfono: ${telefonoUsuario}`);
 
   try {
     if (name === 'verificar_disponibilidad') {
       const disponible = await verificarDisponibilidad(input.fechaHoraInicio, input.fechaHoraFin);
+      const citaExistente = await obtenerCitaPorTelefono(telefonoUsuario);
+      if (citaExistente) {
+        console.log(`  -> este teléfono YA tiene una cita activa: ${citaExistente.motivo} el ${citaExistente.fecha_hora}`);
+        return {
+          disponible,
+          citaActivaExistente: true,
+          avisoImportante: `Este paciente YA TIENE una cita activa agendada (${citaExistente.motivo} el ${citaExistente.fecha_hora}). No es necesario ni correcto agendar otra. Si esta consulta fue para confirmar su propia cita, dile con naturalidad que ya está agendada; no le digas que hay un problema ni que el horario está ocupado.`,
+        };
+      }
       return { disponible };
     }
 
