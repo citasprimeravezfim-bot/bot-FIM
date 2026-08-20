@@ -11,6 +11,12 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
+// Número de WhatsApp del equipo humano. Se usa tanto para urgencias dentales
+// como para cualquier caso en que el bot no sepa algo o el paciente pida
+// hablar con una persona. Un solo número, para no tener que mantener varios
+// sincronizados.
+const STAFF_WHATSAPP_NUMBER = process.env.STAFF_WHATSAPP_NUMBER || '5638078177';
+
 const SYSTEM_PROMPT_BASE = `Eres Adriana, la asistente virtual de Fundación Implantológica de México, una clínica dental.
 
 TONO: Amable, cordial, cálido y mexicano. Cercano pero profesional. Respuestas breves (máximo 4-5 líneas), claras y fáciles de leer en WhatsApp. Puedes usar emojis con moderación (🦷😊) pero sin exagerar.
@@ -93,7 +99,7 @@ Si preguntan si CUENTAN CON ESPECIALISTAS, responde:
 "El tratamiento lo realiza un especialista en cirugía bucal e implantología con años de experiencia y formación avanzada."
 
 Si preguntan por URGENCIAS DENTALES, responde:
-"Sí, para una urgencia dental comunícate a 5627707778."
+"Sí, para una urgencia dental comunícate a ${STAFF_WHATSAPP_NUMBER}."
 
 Si preguntan por nuestros HORARIOS, responde:
 "Nuestros horarios son:
@@ -148,7 +154,7 @@ Si el paciente pide una valoración de implantes (y es su primera vez, no un seg
 7. Si el paciente dice que no confirma, o pide cambiar algo, vuelve a preguntar el dato correcto y repite el resumen antes de agendar.
 8. Si al intentar agendar el horario resulta ocupado (puede pasar si alguien más lo tomó mientras conversaban), avísale amablemente y pide que elija otro horario. No intentes agendar igual.
 9. Si el resultado de "agendar_cita" indica que el paciente ya tenía una cita activa (yaExistia: true), NO lo trates como error ni te disculpes — simplemente confirma con naturalidad que su cita ya ha quedado agendada, con los datos que te dé la herramienta.
-10. Si ocurre un ERROR TÉCNICO al usar "agendar_cita", "verificar_disponibilidad", "cancelar_cita" o "reagendar_cita" (distinto a que el horario esté ocupado o a que la cita ya existiera), discúlpate brevemente y recomienda comunicarse directamente al 5638078177 para que le ayuden a agendar. Ejemplo: "Ups, parece que hubo un problema al agendar tu cita en el sistema. Te pido una disculpa. Te recomiendo comunicarte directamente con nuestro equipo al 5638078177 para que puedan agendarte sin problema. ¡Estamos para ayudarte! 🦷"
+10. Si ocurre un ERROR TÉCNICO al usar "agendar_cita", "verificar_disponibilidad", "cancelar_cita" o "reagendar_cita" (distinto a que el horario esté ocupado o a que la cita ya existiera), discúlpate brevemente y recomienda comunicarse directamente al ${STAFF_WHATSAPP_NUMBER} para que le ayuden a agendar. Ejemplo: "Ups, parece que hubo un problema al agendar tu cita en el sistema. Te pido una disculpa. Te recomiendo comunicarte directamente con nuestro equipo al ${STAFF_WHATSAPP_NUMBER} para que puedan agendarte sin problema. ¡Estamos para ayudarte! 🦷"
 - Siempre usa el año 2026 si el paciente no especifica año.
 - Nunca agendes fuera del horario de valoraciones (Lunes a viernes 10:00-19:00, Sábados 10:00-14:00).
 - Nunca agendes algo que no sea una valoración de primera vez de implantes.
@@ -174,7 +180,8 @@ Si el paciente quiere reagendar su cita:
 REGLAS:
 - Siempre responde en español, con el tono mexicano descrito arriba.
 - No uses asteriscos ni ningún otro formato de negritas/markdown en tus respuestas. Escribe todo en texto plano.
-- Si preguntan algo que no está en esta información (por ejemplo dudas médicas específicas), sé honesta y ofrece conectar con alguien del equipo, por ejemplo: "Esa información mejor te la confirma alguien de nuestro equipo, ¿quieres que te conecte? 😊"
+- Si preguntan algo que no está en esta información (por ejemplo dudas médicas específicas, o cualquier cosa que no sepas responder con lo que tienes aquí), sé honesta y dale directamente el contacto de una persona del equipo, por ejemplo: "Esa información mejor te la confirma alguien de nuestro equipo. Escríbeles por WhatsApp al ${STAFF_WHATSAPP_NUMBER} y con gusto te ayudan 😊"
+- Si el paciente pide explícitamente hablar con una persona, un humano, un asesor o un agente, respóndele siempre dándole el número: "Con gusto. Para hablar directo con alguien de nuestro equipo, escríbeles por WhatsApp al ${STAFF_WHATSAPP_NUMBER} y te atienden enseguida 🙌"
 - Nunca inventes precios, servicios o promociones que no estén aquí.`;
 
 function getSystemPrompt() {
@@ -345,9 +352,30 @@ async function procesarMensajeEntrante(message, from) {
       return;
     }
 
-    const lower = userText.toLowerCase().trim();
-    if (lower === 'humano' || lower === 'agente') {
-      const respuestaFija = 'Te voy a conectar con una persona de nuestro equipo, en breve te contactan 🙌';
+    // Detecta si el paciente está pidiendo hablar con una persona/humano,
+    // no solo con la palabra exacta "humano" o "agente" (como antes), sino
+    // frases comunes como "quiero hablar con alguien", "conéctame con una
+    // persona", "necesito un asesor", "me pueden pasar con alguien", etc.
+    // Se le quitan los acentos antes de comparar para no depender de que el
+    // paciente los escriba bien (ej. "conéctame" -> "conectame").
+    const lower = userText
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+    const pideHumano =
+      /\b(humano|agente|asesor|representante)\b/.test(lower) ||
+      /\bpersona\s+real\b/.test(lower) ||
+      /(habl|comunic|contact|conect|pas[ae])\w*.{0,15}(con\s+)?(alguien|una\s+persona|un\s+humano|un\s+asesor|un\s+agente)/.test(lower) ||
+      /atencion\s+humana|ayuda\s+humana/.test(lower);
+
+    if (pideHumano) {
+      // Le damos directamente el número de WhatsApp del equipo para que el
+      // paciente les escriba: así el mensaje siempre llega, sin depender de
+      // que el bot logre notificar al staff (la API de WhatsApp no permite
+      // que el bot le escriba primero a un número si no le ha escrito antes
+      // o sin una plantilla aprobada por Meta).
+      const respuestaFija = `Con gusto. Para hablar directo con alguien de nuestro equipo, escríbeles por WhatsApp al ${STAFF_WHATSAPP_NUMBER} y te atienden enseguida 🙌`;
       await sendWhatsAppMessage(from, respuestaFija);
       await guardarMensaje(from, 'assistant', respuestaFija);
       return;
