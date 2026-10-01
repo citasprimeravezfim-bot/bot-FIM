@@ -1,6 +1,6 @@
 const { obtenerCitasParaManana, marcarRecordatorioEnviado } = require('./db');
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const GRAPH_API_TOKEN = process.env.GRAPH_API_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 async function enviarMensajeRecordatorio(to, texto) {
@@ -10,7 +10,7 @@ async function enviarMensajeRecordatorio(to, texto) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        Authorization: `Bearer ${GRAPH_API_TOKEN}`,
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
