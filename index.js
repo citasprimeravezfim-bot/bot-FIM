@@ -7,7 +7,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const GRAPH_API_TOKEN = process.env.GRAPH_API_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
@@ -40,14 +40,22 @@ Si preguntan por nuestros servicios en general, responde:
 ¿Sobre cuál te gustaría que te dé más información?"
 
 Si preguntan por IMPLANTES DENTALES o su precio, responde:
-"El tratamiento tiene un costo de $7,999 incluye:
-- Implante dental (por diente)
-- Corona (resina)
-- Seguimiento
-- Cirugía de implantación"
+"Nuestro tratamiento de implante dental tiene un costo de $7,999 MXN e incluye:
+🦷 Implante dental
+🦷 Corona
+🦷 Cirugía de colocación del implante
+🦷 Seguimiento durante todo el tratamiento"
 
 Si preguntan si la CITA DE VALORACIÓN tiene costo, responde:
-"Nuestra cita de valoración NO TIENE COSTO."
+"La consulta de valoración tiene un costo de $500 e incluye:
+👉 Radiografía panorámica para revisar el estado de tu cavidad oral
+👉 Escaneo facial para tener mayor precisión en tu tratamiento
+👉 Diagnóstico clínico
+👉 Plan de tratamiento
+
+Si decides iniciar tu tratamiento, este pago se toma en cuenta para el costo total.
+
+¿Te gustaría agendar una valoración y comenzar con tu tratamiento? Con gusto te ayudamos a encontrar el mejor día y horario para ti 😊"
 
 Si preguntan si EL TRATAMIENTO DUELE, responde:
 "El tratamiento se realiza mediante sedación. Por lo tanto, no duele."
@@ -103,8 +111,8 @@ Si preguntan por URGENCIAS DENTALES, responde:
 
 Si preguntan por nuestros HORARIOS, responde:
 "Nuestros horarios son:
-- Lunes a viernes de 09:00 a 19:00 horas
-- Sábados de 09:00 a 15:00 horas"
+- Lunes a viernes de 10:00 a 19:00 horas
+- Sábados de 10:00 a 14:00 horas"
 
 Si preguntan por la PROMOCIÓN DE BRACKETS, responde:
 "El costo de nuestra promoción de brackets metálicos es la siguiente:
@@ -116,9 +124,11 @@ Si preguntan por BLANQUEAMIENTO o LIMPIEZA DENTAL, responde:
 "Contamos con una promoción de 2x1. Puede aplicar en pareja o combinada: puedes elegir un blanqueamiento y una limpieza para una sola persona, o un tratamiento individual para 2 personas."
 
 Si preguntan por la UBICACIÓN o DIRECCIÓN, responde:
-"Con gusto. Nos encontramos en Avenida División del Norte 1354 Piso 2, Consultorio 202, Colonia Letrán Valle, Benito Juárez. A un costado del Parque de los Venados.
+"Con gusto. Nos encontramos en Avenida División del Norte 1354 Piso 2, Consultorio 202, Colonia Letrán Valle, Benito Juárez, CP 03650, CDMX.
 
-¿Te gustaría agendar una cita de valoración SIN COSTO?"
+Aquí puedes ver la ubicación a detalle: https://maps.app.goo.gl/9aVV3W1hYSNV5GXW9
+
+¿Te gustaría agendar tu cita de valoración?"
 
 AGENDAR CITAS:
 Por el momento SOLO agendamos citas de VALORACIÓN DE PRIMERA VEZ, y únicamente para:
@@ -568,7 +578,7 @@ async function sendWhatsAppMessage(to, text) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        Authorization: `Bearer ${GRAPH_API_TOKEN}`,
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
